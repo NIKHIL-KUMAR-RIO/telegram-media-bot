@@ -1,0 +1,512 @@
+import time
+from config import ADMIN_ID, CHANNEL_ID
+from core.staging import get_pending, add
+from core.approval import run_approval
+from core.parser import parse
+from db import fetchall, execute
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+
+def is_admin(update):
+    return update.effective_user.id == ADMIN_ID
+
+
+def is_approved(user_id):
+    row = fetchall("SELECT * FROM approved_users WHERE user_id=?", (user_id,))
+    return len(row) > 0
+
+
+async def done(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    pending = get_pending()
+
+    if not pending:
+        await update.message.reply_text("ℹ️ No pending files to save.")
+        return
+
+    count = run_approval()
+
+    if count == 0:
+        await update.message.reply_text("❌ No files were approved. Check logs for errors.")
+    else:
+        await update.message.reply_text(f"✅ {count} file(s) saved to database successfully.")
+
+
+async def approve(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    args = context.args
+
+    if not args:
+        await update.message.reply_text(
+            "ℹ️ Usage: /approve <telegram_id>\n"
+            "Example: /approve 123456789"
+        )
+        return
+
+    try:
+        target_id = int(args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Invalid Telegram ID. It must be a number.")
+        return
+
+    already = fetchall("SELECT * FROM approved_users WHERE user_id=?", (target_id,))
+    if already:
+        await update.message.reply_text(f"ℹ️ User `{target_id}` is already approved.", parse_mode="Markdown")
+        return
+
+    execute(
+        "INSERT INTO approved_users (user_id, approved_at) VALUES (?, ?)",
+        (target_id, int(time.time()))
+    )
+
+    await update.message.reply_text(f"✅ User `{target_id}` has been approved.", parse_mode="Markdown")
+
+    try:
+        await context.bot.send_message(
+            target_id,
+            "✅ You have been approved! Send /start to begin."
+        )
+    except Exception:
+        await update.message.reply_text("⚠️ Could not notify the user. They may not have started the bot yet.")
+
+
+async def revoke(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    args = context.args
+
+    if not args:
+        await update.message.reply_text(
+            "ℹ️ Usage: /revoke <telegram_id>\n"
+            "Example: /revoke 123456789"
+        )
+        return
+
+    try:
+        target_id = int(args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Invalid Telegram ID. It must be a number.")
+        return
+
+    existing = fetchall("SELECT * FROM approved_users WHERE user_id=?", (target_id,))
+    if not existing:
+        await update.message.reply_text(f"ℹ️ User `{target_id}` is not in the approved list.", parse_mode="Markdown")
+        return
+
+    execute("DELETE FROM approved_users WHERE user_id=?", (target_id,))
+    await update.message.reply_text(f"✅ User `{target_id}` has been revoked.", parse_mode="Markdown")
+
+
+async def list_users(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    rows = fetchall("SELECT * FROM approved_users")
+
+    if not rows:
+        await update.message.reply_text("ℹ️ No approved users yet.")
+        return
+
+    text = "👥 *Approved Users:*\n\n"
+    for r in rows:
+        text += f"• `{r['user_id']}`\n"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def handle_access_request(update, context):
+    q = update.callback_query
+    await q.answer()
+
+    data = q.data
+
+    if data.startswith("requestaccess_"):
+        user_id = int(data.split("_", 1)[1])
+        first_name = update.effective_user.first_name
+
+        already = fetchall("SELECT * FROM approved_users WHERE user_id=?", (user_id,))
+        if already:
+            await q.message.edit_text("✅ You are already approved! Send /start to begin.")
+            return
+
+        kb = [
+            [
+                InlineKeyboardButton("✅ Approve", callback_data=f"grantaccess_{user_id}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"rejectaccess_{user_id}")
+            ]
+        ]
+
+        await context.bot.send_message(
+            ADMIN_ID,
+            f"👤 *New Access Request*\n\n"
+            f"Name: {first_name}\n"
+            f"ID: `{user_id}`",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown"
+        )
+
+        await q.message.edit_text(
+            "✅ Your request has been sent to the admin.\n"
+            "You will be notified once approved."
+        )
+
+    elif data.startswith("grantaccess_"):
+        user_id = int(data.split("_", 1)[1])
+
+        already = fetchall("SELECT * FROM approved_users WHERE user_id=?", (user_id,))
+        if already:
+            await q.message.edit_text(f"ℹ️ User `{user_id}` is already approved.", parse_mode="Markdown")
+            return
+
+        execute(
+            "INSERT INTO approved_users (user_id, approved_at) VALUES (?, ?)",
+            (user_id, int(time.time()))
+        )
+
+        await q.message.edit_text(f"✅ User `{user_id}` has been approved.", parse_mode="Markdown")
+
+        try:
+            await context.bot.send_message(
+                user_id,
+                "✅ Your access has been approved! Send /start to begin."
+            )
+        except Exception:
+            pass
+
+    elif data.startswith("rejectaccess_"):
+        user_id = int(data.split("_", 1)[1])
+
+        await q.message.edit_text(f"❌ User `{user_id}` has been rejected.", parse_mode="Markdown")
+
+        try:
+            await context.bot.send_message(
+                user_id,
+                "❌ Your access request has been rejected."
+            )
+        except Exception:
+            pass
+
+
+async def media_request(update, context):
+    user_id = update.effective_user.id
+    first_name = update.effective_user.first_name
+
+    if user_id != ADMIN_ID and not is_approved(user_id):
+        await update.message.reply_text("⛔ You don't have access to this bot.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "ℹ️ Usage: /request <what you want>\n"
+            "Example: /request Clone Wars Season 2"
+        )
+        return
+
+    request_text = " ".join(context.args)
+
+    kb = [
+        [
+            InlineKeyboardButton("✅ Approve", callback_data=f"approverequest_{user_id}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"rejectrequest_{user_id}")
+        ]
+    ]
+
+    await context.bot.send_message(
+        ADMIN_ID,
+        f"📩 *New Media Request*\n\n"
+        f"From: {first_name}\n"
+        f"ID: `{user_id}`\n\n"
+        f"Request: *{request_text}*",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown"
+    )
+
+    await update.message.reply_text("✅ Your request has been sent!")
+
+
+async def handle_media_request(update, context):
+    q = update.callback_query
+    await q.answer()
+
+    data = q.data
+
+    if data.startswith("approverequest_"):
+        user_id = int(data.split("_", 1)[1])
+
+        await q.message.edit_text(
+            q.message.text + "\n\n✅ Approved",
+            parse_mode="Markdown"
+        )
+
+        try:
+            await context.bot.send_message(
+                user_id,
+                "✅ Your request has been approved! The owner will look into it and add it soon."
+            )
+        except Exception:
+            pass
+
+    elif data.startswith("rejectrequest_"):
+        user_id = int(data.split("_", 1)[1])
+
+        await q.message.edit_text(
+            q.message.text + "\n\n❌ Rejected",
+            parse_mode="Markdown"
+        )
+
+        try:
+            await context.bot.send_message(
+                user_id,
+                "❌ Your request was not approved."
+            )
+        except Exception:
+            pass
+
+
+# -------------------------
+# DELETE MEDIA
+# -------------------------
+async def delete_media(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "ℹ️ Usage: /delete <name>\n"
+            "Example: /delete The Dark Knight\n"
+            "Example: /delete Star Wars Young Jedi Adventures"
+        )
+        return
+
+    name = " ".join(context.args)
+
+    # Search movies
+    movies = fetchall(
+        "SELECT * FROM movies WHERE title LIKE ?", (f"%{name}%",)
+    )
+
+    # Search shows
+    shows = fetchall(
+        "SELECT * FROM shows WHERE title LIKE ?", (f"%{name}%",)
+    )
+
+    if not movies and not shows:
+        await update.message.reply_text(f"❌ Nothing found matching: *{name}*", parse_mode="Markdown")
+        return
+
+    # Build response
+    for movie in movies:
+        kb = [
+            [
+                InlineKeyboardButton("🗑️ Confirm Delete", callback_data=f"delmovie_{movie['id']}"),
+                InlineKeyboardButton("❌ Cancel", callback_data="delcancel")
+            ]
+        ]
+        await update.message.reply_text(
+            f"🎬 Found Movie: *{movie['title']}* ({movie['year'] or 'N/A'})\n\nConfirm delete?",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown"
+        )
+
+    for show in shows:
+        seasons = fetchall(
+            "SELECT * FROM seasons WHERE show_id=? ORDER BY season_number", (show["id"],)
+        )
+
+        kb = [
+            [InlineKeyboardButton("🗑️ Delete Entire Show", callback_data=f"delshow_{show['id']}")]
+        ]
+
+        for season in seasons:
+            kb.append([
+                InlineKeyboardButton(
+                    f"🗑️ Delete Season {season['season_number']}",
+                    callback_data=f"delseason_{season['id']}_{show['id']}"
+                )
+            ])
+
+        kb.append([InlineKeyboardButton("❌ Cancel", callback_data="delcancel")])
+
+        await update.message.reply_text(
+            f"📺 Found Show: *{show['title']}*\n\nWhat do you want to delete?",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown"
+        )
+
+
+async def handle_delete(update, context):
+    q = update.callback_query
+    await q.answer()
+
+    data = q.data
+
+    # Cancel
+    if data == "delcancel":
+        await q.message.edit_text("❌ Deletion cancelled.")
+        return
+
+    # Delete movie
+    elif data.startswith("delmovie_"):
+        movie_id = int(data.split("_", 1)[1])
+
+        movie = fetchall("SELECT * FROM movies WHERE id=?", (movie_id,))
+        if not movie:
+            await q.message.edit_text("❌ Movie not found.")
+            return
+
+        title = movie[0]["title"]
+        execute("DELETE FROM movie_files WHERE movie_id=?", (movie_id,))
+        execute("DELETE FROM movies WHERE id=?", (movie_id,))
+
+        await q.message.edit_text(f"✅ *{title}* has been deleted.", parse_mode="Markdown")
+
+    # Delete entire show
+    elif data.startswith("delshow_"):
+        show_id = int(data.split("_", 1)[1])
+
+        show = fetchall("SELECT * FROM shows WHERE id=?", (show_id,))
+        if not show:
+            await q.message.edit_text("❌ Show not found.")
+            return
+
+        title = show[0]["title"]
+        _delete_show(show_id)
+
+        await q.message.edit_text(f"✅ *{title}* has been fully deleted.", parse_mode="Markdown")
+
+    # Delete a season
+    elif data.startswith("delseason_"):
+        parts = data.split("_", 2)
+        season_id = int(parts[1])
+        show_id = int(parts[2])
+
+        season = fetchall("SELECT * FROM seasons WHERE id=?", (season_id,))
+        show = fetchall("SELECT * FROM shows WHERE id=?", (show_id,))
+
+        if not season or not show:
+            await q.message.edit_text("❌ Season not found.")
+            return
+
+        season_number = season[0]["season_number"]
+        show_title = show[0]["title"]
+
+        _delete_season(season_id)
+
+        # If no seasons left, delete the show too
+        remaining = fetchall("SELECT * FROM seasons WHERE show_id=?", (show_id,))
+        if not remaining:
+            execute("DELETE FROM shows WHERE id=?", (show_id,))
+            await q.message.edit_text(
+                f"✅ Season {season_number} deleted.\n"
+                f"No seasons remaining — *{show_title}* has also been removed.",
+                parse_mode="Markdown"
+            )
+        else:
+            await q.message.edit_text(
+                f"✅ Season {season_number} of *{show_title}* has been deleted.",
+                parse_mode="Markdown"
+            )
+
+
+def _delete_show(show_id):
+    seasons = fetchall("SELECT * FROM seasons WHERE show_id=?", (show_id,))
+    for season in seasons:
+        _delete_season(season["id"])
+    execute("DELETE FROM seasons WHERE show_id=?", (show_id,))
+    execute("DELETE FROM shows WHERE id=?", (show_id,))
+
+
+def _delete_season(season_id):
+    episodes = fetchall("SELECT * FROM episodes WHERE season_id=?", (season_id,))
+    for ep in episodes:
+        execute("DELETE FROM episode_files WHERE episode_id=?", (ep["id"],))
+    execute("DELETE FROM episodes WHERE season_id=?", (season_id,))
+    execute("DELETE FROM seasons WHERE id=?", (season_id,))
+
+
+async def format_guide(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+    await update.message.reply_text(
+        "📋 *Filename Format Guide*\n\n"
+        "*Movies:*\n"
+        "`The.Dark.Knight.2008.720p.mkv`\n\n"
+        "*Shows (Single Episode):*\n"
+        "`Star.Wars.The.Clone.Wars.S07E11.720p.mkv`\n\n"
+        "*Shows (Double Episode):*\n"
+        "`Star.Wars.The.Bad.Batch.S02E16E17.1080p.mkv`\n\n"
+        "*Qualities supported:*\n"
+        "`480p | 720p | 1080p | 2160p | 4k`",
+        parse_mode="Markdown"
+    )
+
+
+async def handle_photo(update, context):
+    if not is_admin(update):
+        return
+
+    photo = update.message.photo[-1]
+    file_id = photo.file_id
+
+    await update.message.reply_text(
+        f"Photo file id:\n{file_id}"
+    )
+
+
+async def handle_channel_post(update, context):
+    message = update.channel_post
+
+    if not message:
+        return
+
+    if message.chat.id != CHANNEL_ID:
+        return
+
+    doc = message.document or message.video
+    if not doc:
+        return
+
+    file_name = doc.file_name or "unknown"
+    file_id = doc.file_id
+
+    parsed = parse(file_name)
+
+    if not parsed.get("valid"):
+        await context.bot.send_message(
+            ADMIN_ID,
+            f"⚠️ Could not parse filename:\n`{file_name}`\n\n"
+            f"Reason: {parsed.get('reason', 'Unknown')}",
+            parse_mode="Markdown"
+        )
+        return
+
+    added = add(parsed, file_id, file_name)
+
+    if added:
+        if parsed["type"] == "movie":
+            info = f"🎬 *{parsed['title']}* ({parsed.get('year', 'N/A')}) — {parsed.get('quality', 'unknown')}"
+        else:
+            s = parsed.get("season")
+            e1 = parsed.get("episode_start")
+            e2 = parsed.get("episode_end")
+            if e2:
+                info = f"📺 *{parsed['title']}* — S{s:02d}E{e1:02d}E{e2:02d} — {parsed.get('quality', 'unknown')}"
+            else:
+                info = f"📺 *{parsed['title']}* — S{s:02d}E{e1:02d} — {parsed.get('quality', 'unknown')}"
+
+        await context.bot.send_message(
+            ADMIN_ID,
+            f"✅ Detected and staged:\n{info}\n\nSend /done to save to database.",
+            parse_mode="Markdown"
+        )
