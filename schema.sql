@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS staging (
     season INTEGER,
     episode INTEGER,
     episode_end INTEGER,
+    part INTEGER,
     quality TEXT,
     status TEXT DEFAULT 'pending',
     created_at INTEGER
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS episode_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     episode_id INTEGER,
     quality TEXT,
+    part INTEGER,
     file_id TEXT,
     FOREIGN KEY (episode_id) REFERENCES episodes(id)
 );

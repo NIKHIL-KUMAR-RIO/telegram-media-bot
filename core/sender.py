@@ -37,7 +37,7 @@ async def send_episode(bot, chat_id, episode_id):
 
     try:
         files = fetchall(
-            "SELECT * FROM episode_files WHERE episode_id=?",
+            "SELECT * FROM episode_files WHERE episode_id=? ORDER BY part",
             (episode_id,)
         )
 
@@ -73,13 +73,13 @@ async def send_season(bot, chat_id, season_id):
             return
 
         for e in eps:
-            file = fetchall(
-                "SELECT * FROM episode_files WHERE episode_id=?",
+            files = fetchall(
+                "SELECT * FROM episode_files WHERE episode_id=? ORDER BY part",
                 (e["id"],)
             )
 
-            if file:
-                await bot.send_document(chat_id, file[0]["file_id"])
+            for f in files:
+                await bot.send_document(chat_id, f["file_id"])
                 await asyncio.sleep(0.5)
 
     except Exception as e:

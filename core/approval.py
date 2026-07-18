@@ -157,11 +157,15 @@ def _process_show(r, show_cache):
 
     for ep_num in episodes_to_link:
         episode_id = _get_or_create_episode(season_id, ep_num)
+        part = r["part"] if "part" in r.keys() else None
 
+        # Match on part too (using IS to correctly match NULL=NULL), so
+        # multi-part episodes (e.g. "S02E01 Part 1" and "Part 2") are
+        # stored as separate files instead of one overwriting the other.
         existing_ep = fetchall("""
             SELECT id FROM episode_files
-            WHERE episode_id=? AND quality=?
-        """, (episode_id, r["quality"]))
+            WHERE episode_id=? AND quality=? AND part IS ?
+        """, (episode_id, r["quality"], part))
 
         if existing_ep:
             execute("""
@@ -171,6 +175,6 @@ def _process_show(r, show_cache):
             """, (r["file_id"], existing_ep[0]["id"]))
         else:
             execute("""
-                INSERT INTO episode_files (episode_id, quality, file_id)
-                VALUES (?, ?, ?)
-            """, (episode_id, r["quality"], r["file_id"]))
+                INSERT INTO episode_files (episode_id, quality, part, file_id)
+                VALUES (?, ?, ?, ?)
+            """, (episode_id, r["quality"], part, r["file_id"]))

@@ -53,6 +53,13 @@ def fetchone(query, params=()):
         conn.close()
 
 
+def _add_column_if_missing(conn, table, column, coltype):
+    cur = conn.execute(f"PRAGMA table_info({table})")
+    existing = [row[1] for row in cur.fetchall()]
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+
+
 def init_db():
     os.makedirs("storage", exist_ok=True)
     with open("schema.sql", "r", encoding="utf-8") as f:
@@ -61,6 +68,14 @@ def init_db():
     conn = get_conn()
     try:
         conn.executescript(sql)
+
+        # One-time migration: adds the "part" column (for multi-part
+        # episodes, e.g. "S02E01 Part 1" / "Part 2") to databases created
+        # before this feature existed. Safe to run every startup — it's
+        # a no-op once the column already exists.
+        _add_column_if_missing(conn, "staging", "part", "INTEGER")
+        _add_column_if_missing(conn, "episode_files", "part", "INTEGER")
+
         conn.commit()
     finally:
         conn.close()
