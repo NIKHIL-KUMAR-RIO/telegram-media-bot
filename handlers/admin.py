@@ -16,6 +16,20 @@ def is_approved(user_id):
     return len(row) > 0
 
 
+async def _get_display_name(context, user_id):
+    """
+    Looks up a user's name via Telegram. Works as long as the user has
+    interacted with the bot before (which is true for both approval
+    flows — they've either sent /start or triggered a request).
+    Falls back to 'Unknown' if the lookup fails for any reason.
+    """
+    try:
+        chat = await context.bot.get_chat(user_id)
+        return chat.first_name or chat.username or "Unknown"
+    except Exception:
+        return "Unknown"
+
+
 async def done(update, context):
     if not is_admin(update):
         await update.message.reply_text("❌ You are not authorized to use this command.")
@@ -60,12 +74,14 @@ async def approve(update, context):
         await update.message.reply_text(f"ℹ️ User `{target_id}` is already approved.", parse_mode="Markdown")
         return
 
+    name = await _get_display_name(context, target_id)
+
     execute(
-        "INSERT INTO approved_users (user_id, approved_at) VALUES (?, ?)",
-        (target_id, int(time.time()))
+        "INSERT INTO approved_users (user_id, name, approved_at) VALUES (?, ?, ?)",
+        (target_id, name, int(time.time()))
     )
 
-    await update.message.reply_text(f"✅ User `{target_id}` has been approved.", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ User `{target_id}` ({name}) has been approved.", parse_mode="Markdown")
 
     try:
         await context.bot.send_message(
@@ -118,7 +134,8 @@ async def list_users(update, context):
 
     text = "👥 *Approved Users:*\n\n"
     for r in rows:
-        text += f"• `{r['user_id']}`\n"
+        name = r["name"] if "name" in r.keys() and r["name"] else "Unknown"
+        text += f"• `{r['user_id']}` - {name}\n"
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -167,12 +184,14 @@ async def handle_access_request(update, context):
             await q.message.edit_text(f"ℹ️ User `{user_id}` is already approved.", parse_mode="Markdown")
             return
 
+        name = await _get_display_name(context, user_id)
+
         execute(
-            "INSERT INTO approved_users (user_id, approved_at) VALUES (?, ?)",
-            (user_id, int(time.time()))
+            "INSERT INTO approved_users (user_id, name, approved_at) VALUES (?, ?, ?)",
+            (user_id, name, int(time.time()))
         )
 
-        await q.message.edit_text(f"✅ User `{user_id}` has been approved.", parse_mode="Markdown")
+        await q.message.edit_text(f"✅ User `{user_id}` ({name}) has been approved.", parse_mode="Markdown")
 
         try:
             await context.bot.send_message(
@@ -432,6 +451,266 @@ def _delete_season(season_id):
         execute("DELETE FROM episode_files WHERE episode_id=?", (ep["id"],))
     execute("DELETE FROM episodes WHERE season_id=?", (season_id,))
     execute("DELETE FROM seasons WHERE id=?", (season_id,))
+
+
+# -------------------------
+# LIST MEDIA (for reference — IDs shown for convenience only,
+# /rename itself works by name search, not by typing IDs)
+# -------------------------
+async def list_movies(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    rows = fetchall("SELECT * FROM movies ORDER BY order_index")
+    if not rows:
+        await update.message.reply_text("ℹ️ No movies saved yet.")
+        return
+
+    text = "🎬 *Movies:*\n\n"
+    for m in rows:
+        text += f"`[{m['id']}]` {m['title']} ({m['year'] or 'N/A'})\n"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def list_shows(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    rows = fetchall("SELECT * FROM shows ORDER BY order_index")
+    if not rows:
+        await update.message.reply_text("ℹ️ No shows saved yet.")
+        return
+
+    text = "📺 *Shows:*\n\n"
+    for s in rows:
+        text += f"`[{s['id']}]` {s['title']}\n"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+# -------------------------
+# RENAME MEDIA (title + quality)
+# -------------------------
+async def rename_media(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "ℹ️ Usage: /rename <name>\n"
+            "Example: /rename The Dark Knight\n"
+            "Example: /rename Star Wars Young Jedi Adventures"
+        )
+        return
+
+    name = " ".join(context.args)
+
+    movies = fetchall("SELECT * FROM movies WHERE title LIKE ?", (f"%{name}%",))
+    shows = fetchall("SELECT * FROM shows WHERE title LIKE ?", (f"%{name}%",))
+
+    if not movies and not shows:
+        await update.message.reply_text(f"❌ Nothing found matching: *{name}*", parse_mode="Markdown")
+        return
+
+    for movie in movies:
+        files = fetchall("SELECT * FROM movie_files WHERE movie_id=?", (movie["id"],))
+
+        kb = [[InlineKeyboardButton("✏️ Rename Title", callback_data=f"renametitle_movie_{movie['id']}")]]
+        for f in files:
+            kb.append([InlineKeyboardButton(
+                f"✏️ Quality: {f['quality']}",
+                callback_data=f"renamequality_moviefile_{f['id']}"
+            )])
+        kb.append([InlineKeyboardButton("❌ Cancel", callback_data="renamecancel")])
+
+        await update.message.reply_text(
+            f"🎬 *{movie['title']}* ({movie['year'] or 'N/A'})\n\nWhat do you want to rename?",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown"
+        )
+
+    for show in shows:
+        kb = [
+            [InlineKeyboardButton("✏️ Rename Title", callback_data=f"renametitle_show_{show['id']}")],
+            [InlineKeyboardButton("📁 Edit Episode Quality", callback_data=f"renamebrowse_show_{show['id']}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="renamecancel")]
+        ]
+
+        await update.message.reply_text(
+            f"📺 *{show['title']}*\n\nWhat do you want to rename?",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown"
+        )
+
+
+async def handle_rename(update, context):
+    q = update.callback_query
+    await q.answer()
+
+    data = q.data
+
+    if data == "renamecancel":
+        await q.message.edit_text("❌ Rename cancelled.")
+        return
+
+    if data.startswith("renametitle_movie_"):
+        movie_id = int(data.rsplit("_", 1)[1])
+        context.user_data["rename_action"] = {"type": "movie_title", "id": movie_id}
+        await q.message.edit_text("✏️ Reply with the new *title* for this movie.", parse_mode="Markdown")
+        return
+
+    if data.startswith("renametitle_show_"):
+        show_id = int(data.rsplit("_", 1)[1])
+        context.user_data["rename_action"] = {"type": "show_title", "id": show_id}
+        await q.message.edit_text("✏️ Reply with the new *title* for this show.", parse_mode="Markdown")
+        return
+
+    if data.startswith("renamequality_moviefile_"):
+        file_id = int(data.rsplit("_", 1)[1])
+        context.user_data["rename_action"] = {"type": "movie_quality", "id": file_id}
+        await q.message.edit_text(
+            "✏️ Reply with the new *quality* (e.g. 720p, 1080p, 2160p).",
+            parse_mode="Markdown"
+        )
+        return
+
+    if data.startswith("renamequality_epfile_"):
+        file_id = int(data.rsplit("_", 1)[1])
+        context.user_data["rename_action"] = {"type": "episode_quality", "id": file_id}
+        await q.message.edit_text(
+            "✏️ Reply with the new *quality* (e.g. 720p, 1080p, 2160p).",
+            parse_mode="Markdown"
+        )
+        return
+
+    if data.startswith("renamebrowse_show_"):
+        show_id = int(data.rsplit("_", 1)[1])
+        seasons = fetchall("SELECT * FROM seasons WHERE show_id=? ORDER BY season_number", (show_id,))
+
+        if not seasons:
+            await q.message.edit_text("ℹ️ No seasons found for this show.")
+            return
+
+        kb = [
+            [InlineKeyboardButton(f"Season {s['season_number']}", callback_data=f"renamebrowse_season_{s['id']}")]
+            for s in seasons
+        ]
+        kb.append([InlineKeyboardButton("❌ Cancel", callback_data="renamecancel")])
+
+        await q.message.edit_text("📁 Select a season:", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+    if data.startswith("renamebrowse_season_"):
+        season_id = int(data.rsplit("_", 1)[1])
+        episodes = fetchall("SELECT * FROM episodes WHERE season_id=? ORDER BY episode_number", (season_id,))
+
+        if not episodes:
+            await q.message.edit_text("ℹ️ No episodes found for this season.")
+            return
+
+        kb = [
+            [InlineKeyboardButton(f"Episode {e['episode_number']}", callback_data=f"renamebrowse_episode_{e['id']}")]
+            for e in episodes
+        ]
+        kb.append([InlineKeyboardButton("❌ Cancel", callback_data="renamecancel")])
+
+        await q.message.edit_text("📁 Select an episode:", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+    if data.startswith("renamebrowse_episode_"):
+        episode_id = int(data.rsplit("_", 1)[1])
+        files = fetchall("SELECT * FROM episode_files WHERE episode_id=?", (episode_id,))
+
+        if not files:
+            await q.message.edit_text("ℹ️ No quality files found for this episode.")
+            return
+
+        kb = []
+        for f in files:
+            label = f"✏️ Quality: {f['quality']}"
+            if f["part"]:
+                label += f" (Part {f['part']})"
+            kb.append([InlineKeyboardButton(label, callback_data=f"renamequality_epfile_{f['id']}")])
+        kb.append([InlineKeyboardButton("❌ Cancel", callback_data="renamecancel")])
+
+        await q.message.edit_text("📁 Select a file to change quality:", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+
+async def handle_rename_reply(update, context):
+    """
+    Generic text-message handler. Only acts if the admin is mid-rename
+    (context.user_data['rename_action'] was set by a button tap above).
+    Ignores all other plain text so it never interferes with anything else.
+    """
+    action = context.user_data.get("rename_action")
+    if not action:
+        return
+
+    if not is_admin(update):
+        return
+
+    new_value = update.message.text.strip()
+    context.user_data.pop("rename_action", None)
+
+    if not new_value:
+        await update.message.reply_text("❌ Value can't be empty. Rename cancelled.")
+        return
+
+    if action["type"] == "movie_title":
+        execute("UPDATE movies SET title=? WHERE id=?", (new_value, action["id"]))
+        await update.message.reply_text(f"✅ Movie title updated to *{new_value}*.", parse_mode="Markdown")
+
+    elif action["type"] == "show_title":
+        execute("UPDATE shows SET title=? WHERE id=?", (new_value, action["id"]))
+        await update.message.reply_text(f"✅ Show title updated to *{new_value}*.", parse_mode="Markdown")
+
+    elif action["type"] == "movie_quality":
+        row = fetchall("SELECT * FROM movie_files WHERE id=?", (action["id"],))
+        if not row:
+            await update.message.reply_text("❌ File not found — it may have been deleted.")
+            return
+
+        movie_id = row[0]["movie_id"]
+        dup = fetchall(
+            "SELECT id FROM movie_files WHERE movie_id=? AND quality=? AND id!=?",
+            (movie_id, new_value, action["id"])
+        )
+        if dup:
+            await update.message.reply_text(
+                f"❌ This movie already has a *{new_value}* file. Delete it first or pick a different quality.",
+                parse_mode="Markdown"
+            )
+            return
+
+        execute("UPDATE movie_files SET quality=? WHERE id=?", (new_value, action["id"]))
+        await update.message.reply_text(f"✅ Quality updated to *{new_value}*.", parse_mode="Markdown")
+
+    elif action["type"] == "episode_quality":
+        row = fetchall("SELECT * FROM episode_files WHERE id=?", (action["id"],))
+        if not row:
+            await update.message.reply_text("❌ File not found — it may have been deleted.")
+            return
+
+        episode_id = row[0]["episode_id"]
+        part = row[0]["part"]
+        dup = fetchall(
+            "SELECT id FROM episode_files WHERE episode_id=? AND quality=? AND part IS ? AND id!=?",
+            (episode_id, new_value, part, action["id"])
+        )
+        if dup:
+            await update.message.reply_text(
+                f"❌ This episode already has a *{new_value}* file. Delete it first or pick a different quality.",
+                parse_mode="Markdown"
+            )
+            return
+
+        execute("UPDATE episode_files SET quality=? WHERE id=?", (new_value, action["id"]))
+        await update.message.reply_text(f"✅ Quality updated to *{new_value}*.", parse_mode="Markdown")
 
 
 async def format_guide(update, context):

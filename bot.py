@@ -6,6 +6,7 @@ from db import init_db
 from handlers.start import start
 from handlers.navigation import handle_callback, watchorder
 from handlers.admin import done, approve, revoke, list_users, handle_channel_post, handle_access_request, format_guide, handle_photo, media_request, handle_media_request, delete_media, handle_delete
+from handlers.admin import rename_media, handle_rename, handle_rename_reply, list_movies, list_shows
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -38,6 +39,9 @@ async def set_commands(app):
             BotCommand("revoke", "Revoke a user"),
             BotCommand("users", "List approved users"),
             BotCommand("format", "Show filename format guide"),
+            BotCommand("rename", "Rename a movie/show title or quality"),
+            BotCommand("list_movies", "List all movies with IDs"),
+            BotCommand("list_shows", "List all shows with IDs"),
         ],
         scope=BotCommandScopeChat(chat_id=ADMIN_ID)
     )
@@ -62,6 +66,11 @@ def main():
     app.add_handler(CommandHandler("revoke", revoke))
     app.add_handler(CommandHandler("users", list_users))
     app.add_handler(CommandHandler("format", format_guide))
+    app.add_handler(CommandHandler("rename", rename_media))
+    app.add_handler(CommandHandler("list_movies", list_movies))
+    app.add_handler(CommandHandler("list_shows", list_shows))
+    app.add_handler(CallbackQueryHandler(handle_rename, pattern="^rename"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_rename_reply))
 
     # Channel post handler
     app.add_handler(MessageHandler(filters.Chat(chat_id=CHANNEL_ID), handle_channel_post))
