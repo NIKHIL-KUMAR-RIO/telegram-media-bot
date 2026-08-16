@@ -36,6 +36,11 @@ def fetchone(query, params=()):
     return row
 
 
+def is_approved(user_id):
+    row = fetchall("SELECT * FROM approved_users WHERE user_id=?", (user_id,))
+    return len(row) > 0
+
+
 def init_db():
     with open("schema.sql", "r", encoding="utf-8") as f:
         sql = f.read()

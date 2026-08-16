@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS episode_files (
 
 CREATE TABLE IF NOT EXISTS approved_users (
     user_id INTEGER PRIMARY KEY,
+    name TEXT,
     approved_at INTEGER
 );
 

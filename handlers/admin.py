@@ -3,17 +3,12 @@ from config import ADMIN_ID, CHANNEL_ID
 from core.staging import get_pending, add
 from core.approval import run_approval
 from core.parser import parse
-from db import fetchall, execute
+from db import fetchall, execute, is_approved
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def is_admin(update):
     return update.effective_user.id == ADMIN_ID
-
-
-def is_approved(user_id):
-    row = fetchall("SELECT * FROM approved_users WHERE user_id=?", (user_id,))
-    return len(row) > 0
 
 
 async def _get_display_name(context, user_id):

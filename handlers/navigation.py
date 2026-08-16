@@ -1,6 +1,6 @@
 import random as rnd
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from db import fetchall
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from db import fetchall, is_approved
 from core.sender import send_movie, send_episode, send_season
 from config import ADMIN_ID, MOVIES_POSTER, SHOWS_POSTER, MAIN_POSTER
 
@@ -59,11 +59,6 @@ STAR_WARS_ORDER = r"""⭐ *Chronological Order Of STAR WARS*
 ─────────────────────
 🔴 *Non-Canon*
 • Visions (2021)"""
-
-
-def is_approved(user_id):
-    row = fetchall("SELECT * FROM approved_users WHERE user_id=?", (user_id,))
-    return len(row) > 0
 
 
 async def watchorder(update, context):
@@ -131,11 +126,8 @@ async def handle_callback(update, context):
         page_label = f"Page {page + 1}/{total_pages} — " if total_pages > 1 else ""
 
         if data == "movies":
-            await q.message.delete()
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=MOVIES_POSTER,
-                caption=f"🎬 {page_label}Select a movie:",
+            await q.message.edit_media(
+                media=InputMediaPhoto(media=MOVIES_POSTER, caption=f"🎬 {page_label}Select a movie:"),
                 reply_markup=InlineKeyboardMarkup(kb)
             )
         else:
@@ -180,11 +172,8 @@ async def handle_callback(update, context):
         page_label = f"Page {page + 1}/{total_pages} — " if total_pages > 1 else ""
 
         if data == "shows":
-            await q.message.delete()
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=SHOWS_POSTER,
-                caption=f"📺 {page_label}Select a show:",
+            await q.message.edit_media(
+                media=InputMediaPhoto(media=SHOWS_POSTER, caption=f"📺 {page_label}Select a show:"),
                 reply_markup=InlineKeyboardMarkup(kb)
             )
         else:
@@ -435,14 +424,14 @@ async def handle_callback(update, context):
                 InlineKeyboardButton("🎲 Random from the Galaxy", callback_data="random")
             ]
         ]
-        await q.message.delete()
-        await bot.send_photo(
-            chat_id=chat_id,
-            photo=MAIN_POSTER,
-            caption=(
-                f"⭐ The Galactic Archive\n\n"
-                f"A long time ago in a galaxy far, far away...\n"
-                f"Your Star Wars collection awaits, {first_name}."
+        await q.message.edit_media(
+            media=InputMediaPhoto(
+                media=MAIN_POSTER,
+                caption=(
+                    f"⭐ The Galactic Archive\n\n"
+                    f"A long time ago in a galaxy far, far away...\n"
+                    f"Your Star Wars collection awaits, {first_name}."
+                )
             ),
             reply_markup=InlineKeyboardMarkup(kb)
         )
