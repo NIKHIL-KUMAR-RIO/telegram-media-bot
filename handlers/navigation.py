@@ -240,7 +240,7 @@ async def handle_callback(update, context):
         await q.message.edit_caption("⏳ Sending movie, please wait...")
         await send_movie(bot, chat_id, movie_id)
         await q.message.edit_caption(
-            "📥 Done — check above for your file.",
+            "📥 Done — check below for your file.",
             reply_markup=_back_to_movies()
         )
 
@@ -388,7 +388,7 @@ async def handle_callback(update, context):
         await q.message.edit_caption("⏳ Sending episode, please wait...")
         await send_episode(bot, chat_id, episode_id)
         await q.message.edit_caption(
-            "📥 Done — check above for your file.",
+            "📥 Done — check below for your file.",
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("🔙 Back", callback_data=f"season_{season_id}_{show_id}")]]
             )
@@ -405,7 +405,7 @@ async def handle_callback(update, context):
         await q.message.edit_caption("⏳ Sending full season, please wait...")
         await send_season(bot, chat_id, season_id)
         await q.message.edit_caption(
-            "📥 Done — check above for your files.",
+            "📥 Done — check below for your files.",
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("🔙 Back", callback_data=f"season_{season_id}_{show_id}")]]
             )

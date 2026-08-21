@@ -58,3 +58,12 @@ def init_db():
         pass  # column already exists, nothing to do
 
     conn.close()
+
+def execute(query, params=()):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(query, params)
+    conn.commit()
+    last_id = cur.lastrowid
+    conn.close()
+    return last_id
