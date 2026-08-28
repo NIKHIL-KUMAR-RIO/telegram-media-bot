@@ -1,9 +1,12 @@
 import time
+import os
+import shutil
+from datetime import datetime
 from config import ADMIN_ID, CHANNEL_ID
 from core.staging import get_pending, add
 from core.approval import run_approval
 from core.parser import parse
-from db import fetchall, execute, is_approved
+from db import fetchall, fetchone, execute, is_approved
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -485,6 +488,66 @@ async def list_shows(update, context):
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
+async def backup_db(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    db_path = os.path.join("storage", "cache.db")
+
+    if not os.path.exists(db_path):
+        await update.message.reply_text("❌ Database file not found.")
+        return
+
+    # Copy first so we send a stable snapshot even if the DB is
+    # written to mid-upload (SQLite can be mid-write during polling).
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    backup_name = f"cache_backup_{timestamp}.db"
+    backup_path = os.path.join("storage", backup_name)
+
+    try:
+        shutil.copy2(db_path, backup_path)
+        with open(backup_path, "rb") as f:
+            await update.message.reply_document(
+                document=f,
+                filename=backup_name,
+                caption=f"🗄️ Backup created {timestamp}"
+            )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Backup failed: {e}")
+    finally:
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+
+
+async def stats(update, context):
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    movie_count = fetchone("SELECT COUNT(*) as c FROM movies")["c"]
+    movie_file_count = fetchone("SELECT COUNT(*) as c FROM movie_files")["c"]
+
+    show_count = fetchone("SELECT COUNT(*) as c FROM shows")["c"]
+    season_count = fetchone("SELECT COUNT(*) as c FROM seasons")["c"]
+    episode_count = fetchone("SELECT COUNT(*) as c FROM episodes")["c"]
+    episode_file_count = fetchone("SELECT COUNT(*) as c FROM episode_files")["c"]
+
+    user_count = fetchone("SELECT COUNT(*) as c FROM approved_users")["c"]
+
+    db_path = os.path.join("storage", "cache.db")
+    size_mb = (os.path.getsize(db_path) / (1024 * 1024)) if os.path.exists(db_path) else 0
+
+    text = (
+        "📊 *Archive Stats*\n\n"
+        f"🎬 Movies: {movie_count} titles, {movie_file_count} files\n"
+        f"📺 Shows: {show_count} shows, {season_count} seasons, "
+        f"{episode_count} episodes, {episode_file_count} files\n"
+        f"👥 Approved users: {user_count}\n"
+        f"💾 Database size: {size_mb:.2f} MB"
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 # -------------------------
 # RENAME MEDIA (title + quality)
