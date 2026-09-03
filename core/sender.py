@@ -3,16 +3,16 @@ from db import fetchall, fetchone
 from core.locks import acquire, release
 from core.logger import log_action
 
-DELETE_AFTER_SECONDS = 1 * 60 * 60  # 1 hours
+DELETE_AFTER_SECONDS = 1 * 60 * 60  # 1 hour
 
 WARNING_TEXT = (
     "⚠️ Please download your file(s) now.\n"
-    "They will be automatically deleted from this chat in 1 hours."
+    "They will be automatically deleted from this chat in 1 hour."
 )
 
 
 async def _delete_message_job(context):
-    """Runs once, 1 hour after a file was sent, and deletes it."""
+    """Runs once after DELETE_AFTER_SECONDS and deletes the file message."""
     job = context.job
     try:
         await context.bot.delete_message(chat_id=job.chat_id, message_id=job.data)
@@ -29,6 +29,12 @@ def _schedule_deletion(job_queue, chat_id, message_id):
         DELETE_AFTER_SECONDS,
         chat_id=chat_id,
         data=message_id,
+        # APScheduler defaults to a 1-second misfire grace time — if the
+        # scheduled moment passes by more than that (phone throttling,
+        # background load, etc.) it silently SKIPS the job instead of
+        # running it late. We don't care how late this runs, only that
+        # it eventually does, so disable that check entirely.
+        job_kwargs={"misfire_grace_time": None},
     )
 
 
