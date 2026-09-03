@@ -3,16 +3,16 @@ from db import fetchall, fetchone
 from core.locks import acquire, release
 from core.logger import log_action
 
-DELETE_AFTER_SECONDS = 3 * 60 * 60  # 3 hours
+DELETE_AFTER_SECONDS = 1 * 60 * 60  # 1 hours
 
 WARNING_TEXT = (
     "⚠️ Please download your file(s) now.\n"
-    "They will be automatically deleted from this chat in 3 hours."
+    "They will be automatically deleted from this chat in 1 hours."
 )
 
 
 async def _delete_message_job(context):
-    """Runs once, 3 hours after a file was sent, and deletes it."""
+    """Runs once, 1 hour after a file was sent, and deletes it."""
     job = context.job
     try:
         await context.bot.delete_message(chat_id=job.chat_id, message_id=job.data)
