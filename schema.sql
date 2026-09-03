@@ -74,3 +74,14 @@ CREATE INDEX IF NOT EXISTS idx_movie_files_movie_id ON movie_files(movie_id);
 CREATE INDEX IF NOT EXISTS idx_seasons_show_id ON seasons(show_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_season_id ON episodes(season_id);
 CREATE INDEX IF NOT EXISTS idx_episode_files_episode_id ON episode_files(episode_id);
+
+CREATE TABLE IF NOT EXISTS activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    action TEXT,
+    detail TEXT,
+    created_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_log_created_at ON activity_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_log_user_id ON activity_log(user_id);

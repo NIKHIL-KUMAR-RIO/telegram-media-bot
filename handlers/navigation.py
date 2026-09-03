@@ -238,7 +238,7 @@ async def handle_callback(update, context):
         movie_id = int(data.split("_", 1)[1])
 
         await q.message.edit_caption("⏳ Sending movie, please wait...")
-        await send_movie(bot, chat_id, movie_id)
+        await send_movie(bot, chat_id, movie_id, context.job_queue)
         await q.message.edit_caption(
             "📥 Done — check below for your file.",
             reply_markup=_back_to_movies()
@@ -386,7 +386,7 @@ async def handle_callback(update, context):
         show_id = int(parts[3])
 
         await q.message.edit_caption("⏳ Sending episode, please wait...")
-        await send_episode(bot, chat_id, episode_id)
+        await send_episode(bot, chat_id, episode_id, context.job_queue)
         await q.message.edit_caption(
             "📥 Done — check below for your file.",
             reply_markup=InlineKeyboardMarkup(
@@ -403,7 +403,7 @@ async def handle_callback(update, context):
         show_id = int(parts[2])
 
         await q.message.edit_caption("⏳ Sending full season, please wait...")
-        await send_season(bot, chat_id, season_id)
+        await send_season(bot, chat_id, season_id, context.job_queue)
         await q.message.edit_caption(
             "📥 Done — check below for your files.",
             reply_markup=InlineKeyboardMarkup(

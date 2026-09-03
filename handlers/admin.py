@@ -1,12 +1,14 @@
 import time
 import os
 import shutil
+import html
 from datetime import datetime
 from config import ADMIN_ID, CHANNEL_ID
 from core.staging import get_pending, add
 from core.approval import run_approval
 from core.parser import parse
 from db import fetchall, fetchone, execute, is_approved
+from core.logger import get_recent_activity
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -153,6 +155,20 @@ async def handle_access_request(update, context):
             await q.message.edit_text("✅ You are already approved! Send /start to begin.")
             return
 
+        lock_row = fetchone("SELECT status FROM user_locks WHERE user_id=?", (user_id,))
+        if lock_row and lock_row["status"] == "pending":
+            await q.message.edit_text(
+                "⏳ Your request has already been sent.\n"
+                "Please wait for the admin to approve it."
+            )
+            return
+
+        execute(
+            "INSERT INTO user_locks (user_id, status, updated_at) VALUES (?, 'pending', ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET status='pending', updated_at=excluded.updated_at",
+            (user_id, int(time.time()))
+        )
+
         kb = [
             [
                 InlineKeyboardButton("✅ Approve", callback_data=f"grantaccess_{user_id}"),
@@ -189,6 +205,11 @@ async def handle_access_request(update, context):
             (user_id, name, int(time.time()))
         )
 
+        execute(
+            "UPDATE user_locks SET status='free', updated_at=? WHERE user_id=?",
+            (int(time.time()), user_id)
+        )
+
         await q.message.edit_text(f"✅ User `{user_id}` ({name}) has been approved.", parse_mode="Markdown")
 
         try:
@@ -201,6 +222,11 @@ async def handle_access_request(update, context):
 
     elif data.startswith("rejectaccess_"):
         user_id = int(data.split("_", 1)[1])
+
+        execute(
+            "UPDATE user_locks SET status='free', updated_at=? WHERE user_id=?",
+            (int(time.time()), user_id)
+        )
 
         await q.message.edit_text(f"❌ User `{user_id}` has been rejected.", parse_mode="Markdown")
 
@@ -847,3 +873,49 @@ async def handle_channel_post(update, context):
             f"✅ Detected and staged:\n{info}\n\nSend /done to save to database.",
             parse_mode="Markdown"
         )
+
+
+async def activity(update, context):
+    """
+    Admin-only command: shows the most recent user activity
+    (downloads, access requests, etc.) from the activity_log table.
+    Usage: /activity [count]   (defaults to 20)
+
+    Uses parse_mode="HTML" instead of Markdown. Logged titles/filenames
+    can contain characters like _ * ` that break Telegram's Markdown
+    parser and silently kill the whole message. HTML mode is safe here
+    because every dynamic value is escaped with html.escape() before
+    being inserted — only the static <b>/<code> tags are real markup.
+    """
+    if not is_admin(update):
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    limit = 20
+    if context.args:
+        try:
+            limit = max(1, min(int(context.args[0]), 100))
+        except ValueError:
+            await update.message.reply_text("❌ Invalid number. Usage: /activity 20")
+            return
+
+    rows = get_recent_activity(limit)
+
+    if not rows:
+        await update.message.reply_text("ℹ️ No activity logged yet.")
+        return
+
+    lines = [f"📜 <b>Last {len(rows)} Activity Log Entries:</b>\n"]
+    for r in rows:
+        ts = datetime.fromtimestamp(r["created_at"]).strftime("%Y-%m-%d %H:%M")
+        detail = f" — {html.escape(r['detail'])}" if r["detail"] else ""
+        action = html.escape(r["action"])
+        lines.append(f"• <code>{r['user_id']}</code> | {action}{detail} | {ts}")
+
+    text = "\n".join(lines)
+
+    # Telegram messages have a ~4096 char limit; trim safely if needed.
+    if len(text) > 4000:
+        text = text[:4000] + "\n\n...(truncated, request a smaller count)"
+
+    await update.message.reply_text(text, parse_mode="HTML")
