@@ -2,12 +2,13 @@ import random as rnd
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from db import fetchall, is_approved
 from core.sender import send_movie, send_episode, send_season
-from config import ADMIN_ID, MOVIES_POSTER, SHOWS_POSTER, MAIN_POSTER
+from config import ADMIN_ID, MOVIES_POSTER, SHOWS_POSTER, MAIN_POSTER, LEGO_POSTER
 
 EPISODES_PER_PAGE = 6
 SEASONS_PER_PAGE = 5
 SHOWS_PER_PAGE = 6
 MOVIES_PER_PAGE = 6
+LEGO_PER_PAGE = 6
 
 STAR_WARS_ORDER = r"""⭐ *Chronological Order Of STAR WARS*
 
@@ -96,7 +97,9 @@ async def handle_callback(update, context):
     if data == "movies" or data.startswith("moviepage_"):
         page = 0 if data == "movies" else int(data.split("_", 1)[1])
 
-        rows = fetchall("SELECT * FROM movies ORDER BY order_index")
+        rows = fetchall(
+            "SELECT * FROM movies WHERE category='movie' OR category IS NULL ORDER BY order_index"
+        )
 
         if not rows:
             await q.message.edit_caption(
@@ -133,6 +136,52 @@ async def handle_callback(update, context):
         else:
             await q.message.edit_caption(
                 f"🎬 {page_label}Select a movie:",
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+
+    # -------------------------
+    # LEGO FILMS LIST
+    # -------------------------
+    elif data == "lego" or data.startswith("legopage_"):
+        page = 0 if data == "lego" else int(data.split("_", 1)[1])
+
+        rows = fetchall("SELECT * FROM movies WHERE category='lego' ORDER BY order_index")
+
+        if not rows:
+            await q.message.edit_caption(
+                "❌ No LEGO films available yet.",
+                reply_markup=_back_to_main()
+            )
+            return
+
+        total = len(rows)
+        total_pages = (total + LEGO_PER_PAGE - 1) // LEGO_PER_PAGE
+        start = page * LEGO_PER_PAGE
+        end = start + LEGO_PER_PAGE
+        page_items = rows[start:end]
+
+        kb = [[InlineKeyboardButton(r["title"], callback_data=f"movie_{r['id']}")] for r in page_items]
+
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"legopage_{page - 1}"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"legopage_{page + 1}"))
+        if nav:
+            kb.append(nav)
+
+        kb.append([InlineKeyboardButton("🔙 Back", callback_data="main")])
+
+        page_label = f"Page {page + 1}/{total_pages} — " if total_pages > 1 else ""
+
+        if data == "lego":
+            await q.message.edit_media(
+                media=InputMediaPhoto(media=LEGO_POSTER, caption=f"🧱 {page_label}Select a LEGO film:"),
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        else:
+            await q.message.edit_caption(
+                f"🧱 {page_label}Select a LEGO film:",
                 reply_markup=InlineKeyboardMarkup(kb)
             )
 
@@ -419,6 +468,9 @@ async def handle_callback(update, context):
             [
                 InlineKeyboardButton("🎬 Movies", callback_data="movies"),
                 InlineKeyboardButton("📺 Shows", callback_data="shows")
+            ],
+            [
+                InlineKeyboardButton("🧱 LEGO Films", callback_data="lego")
             ],
             [
                 InlineKeyboardButton("🎲 Random from the Galaxy", callback_data="random")

@@ -42,7 +42,7 @@ def _get_next_order_index(table):
     return (row["max_idx"] or 0) + 1
 
 
-def _get_or_create_movie(title, year):
+def _get_or_create_movie(title, year, category):
     # Match on title AND year so movies that share a title
     # (e.g. remakes) but have different years are kept as
     # separate entries instead of being merged together.
@@ -55,8 +55,8 @@ def _get_or_create_movie(title, year):
 
     idx = _get_next_order_index("movies")
     movie_id = execute(
-        "INSERT INTO movies (title, year, order_index) VALUES (?, ?, ?)",
-        (title, year, idx)
+        "INSERT INTO movies (title, year, order_index, category) VALUES (?, ?, ?, ?)",
+        (title, year, idx, category)
     )
     return movie_id
 
@@ -67,7 +67,8 @@ def _process_movie(r, movie_cache):
     key = (r["title"], r["year"])
 
     if key not in movie_cache:
-        movie_cache[key] = _get_or_create_movie(r["title"], r["year"])
+        category = r["category"] if "category" in r.keys() and r["category"] else "movie"
+        movie_cache[key] = _get_or_create_movie(r["title"], r["year"], category)
 
     movie_id = movie_cache[key]
 

@@ -69,16 +69,20 @@ def parse(filename):
     # Then try movie pattern
     m = MOVIE_PATTERN.match(name)
     if m:
+        title = clean(m.group("title"))
         return {
             "valid": True,
             "type": "movie",
-            "title": clean(m.group("title")),
+            "title": title,
             "year": m.group("year"),
             "season": None,
             "episode_start": None,
             "episode_end": None,
             "part": None,
-            "quality": m.group("quality").lower() if m.group("quality") else "unknown"
+            "quality": m.group("quality").lower() if m.group("quality") else "unknown",
+            # Auto-tag as LEGO if the title contains "lego" anywhere.
+            # Admin can override this later via /rename.
+            "category": "lego" if "lego" in title.lower() else "movie"
         }
 
     return {

@@ -349,6 +349,7 @@ async def delete_media(update, context):
 
     # Build response
     for movie in movies:
+        tag = "🧱 LEGO" if movie["category"] == "lego" else "🎬 Movie"
         kb = [
             [
                 InlineKeyboardButton("🗑️ Confirm Delete", callback_data=f"delmovie_{movie['id']}"),
@@ -356,7 +357,7 @@ async def delete_media(update, context):
             ]
         ]
         await update.message.reply_text(
-            f"🎬 Found Movie: *{movie['title']}* ({movie['year'] or 'N/A'})\n\nConfirm delete?",
+            f"{tag}: *{movie['title']}* ({movie['year'] or 'N/A'})\n\nConfirm delete?",
             reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="Markdown"
         )
@@ -486,14 +487,26 @@ async def list_movies(update, context):
         await update.message.reply_text("❌ You are not authorized to use this command.")
         return
 
-    rows = fetchall("SELECT * FROM movies ORDER BY order_index")
-    if not rows:
+    movies = fetchall(
+        "SELECT * FROM movies WHERE category='movie' OR category IS NULL ORDER BY order_index"
+    )
+    lego = fetchall("SELECT * FROM movies WHERE category='lego' ORDER BY order_index")
+
+    if not movies and not lego:
         await update.message.reply_text("ℹ️ No movies saved yet.")
         return
 
-    text = "🎬 *Movies:*\n\n"
-    for m in rows:
-        text += f"`[{m['id']}]` {m['title']} ({m['year'] or 'N/A'})\n"
+    text = ""
+
+    if movies:
+        text += "🎬 *Movies:*\n\n"
+        for m in movies:
+            text += f"`[{m['id']}]` {m['title']} ({m['year'] or 'N/A'})\n"
+
+    if lego:
+        text += "\n🧱 *LEGO Films:*\n\n"
+        for m in lego:
+            text += f"`[{m['id']}]` {m['title']} ({m['year'] or 'N/A'})\n"
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -551,7 +564,10 @@ async def stats(update, context):
         await update.message.reply_text("❌ You are not authorized to use this command.")
         return
 
-    movie_count = fetchone("SELECT COUNT(*) as c FROM movies")["c"]
+    movie_count = fetchone(
+        "SELECT COUNT(*) as c FROM movies WHERE category='movie' OR category IS NULL"
+    )["c"]
+    lego_count = fetchone("SELECT COUNT(*) as c FROM movies WHERE category='lego'")["c"]
     movie_file_count = fetchone("SELECT COUNT(*) as c FROM movie_files")["c"]
 
     show_count = fetchone("SELECT COUNT(*) as c FROM shows")["c"]
@@ -566,7 +582,9 @@ async def stats(update, context):
 
     text = (
         "📊 *Archive Stats*\n\n"
-        f"🎬 Movies: {movie_count} titles, {movie_file_count} files\n"
+        f"🎬 Movies: {movie_count} titles\n"
+        f"🧱 LEGO Films: {lego_count} titles\n"
+        f"📁 Total movie files: {movie_file_count}\n"
         f"📺 Shows: {show_count} shows, {season_count} seasons, "
         f"{episode_count} episodes, {episode_file_count} files\n"
         f"👥 Approved users: {user_count}\n"
@@ -602,6 +620,8 @@ async def rename_media(update, context):
 
     for movie in movies:
         files = fetchall("SELECT * FROM movie_files WHERE movie_id=?", (movie["id"],))
+        tag = "🧱 LEGO" if movie["category"] == "lego" else "🎬 Movie"
+        switch_label = "🔁 Move to Movies" if movie["category"] == "lego" else "🔁 Move to LEGO"
 
         kb = [[InlineKeyboardButton("✏️ Rename Title", callback_data=f"renametitle_movie_{movie['id']}")]]
         for f in files:
@@ -609,10 +629,11 @@ async def rename_media(update, context):
                 f"✏️ Quality: {f['quality']}",
                 callback_data=f"renamequality_moviefile_{f['id']}"
             )])
+        kb.append([InlineKeyboardButton(switch_label, callback_data=f"renamecategory_movie_{movie['id']}")])
         kb.append([InlineKeyboardButton("❌ Cancel", callback_data="renamecancel")])
 
         await update.message.reply_text(
-            f"🎬 *{movie['title']}* ({movie['year'] or 'N/A'})\n\nWhat do you want to rename?",
+            f"{tag}: *{movie['title']}* ({movie['year'] or 'N/A'})\n\nWhat do you want to rename?",
             reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="Markdown"
         )
@@ -658,6 +679,24 @@ async def handle_rename(update, context):
         context.user_data["rename_action"] = {"type": "movie_quality", "id": file_id}
         await q.message.edit_text(
             "✏️ Reply with the new *quality* (e.g. 720p, 1080p, 2160p).",
+            parse_mode="Markdown"
+        )
+        return
+
+    if data.startswith("renamecategory_movie_"):
+        movie_id = int(data.rsplit("_", 1)[1])
+        row = fetchall("SELECT * FROM movies WHERE id=?", (movie_id,))
+        if not row:
+            await q.message.edit_text("❌ Movie not found — it may have been deleted.")
+            return
+
+        current = row[0]["category"] or "movie"
+        new_category = "movie" if current == "lego" else "lego"
+        execute("UPDATE movies SET category=? WHERE id=?", (new_category, movie_id))
+
+        new_tag = "🧱 LEGO Films" if new_category == "lego" else "🎬 Movies"
+        await q.message.edit_text(
+            f"✅ *{row[0]['title']}* moved to {new_tag}.",
             parse_mode="Markdown"
         )
         return
@@ -858,7 +897,8 @@ async def handle_channel_post(update, context):
 
     if added:
         if parsed["type"] == "movie":
-            info = f"🎬 *{parsed['title']}* ({parsed.get('year', 'N/A')}) — {parsed.get('quality', 'unknown')}"
+            tag = "🧱 LEGO" if parsed.get("category") == "lego" else "🎬 Movie"
+            info = f"{tag}: *{parsed['title']}* ({parsed.get('year', 'N/A')}) — {parsed.get('quality', 'unknown')}"
         else:
             s = parsed.get("season")
             e1 = parsed.get("episode_start")

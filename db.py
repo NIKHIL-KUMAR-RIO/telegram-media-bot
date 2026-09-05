@@ -57,6 +57,21 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # column already exists, nothing to do
 
+    # Lightweight migration: add a "category" column to movies/staging
+    # for the Movies vs LEGO Films split. SQLite backfills existing
+    # rows with the DEFAULT value automatically.
+    try:
+        conn.execute("ALTER TABLE movies ADD COLUMN category TEXT DEFAULT 'movie'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        conn.execute("ALTER TABLE staging ADD COLUMN category TEXT DEFAULT 'movie'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
     conn.close()
 
 def execute(query, params=()):

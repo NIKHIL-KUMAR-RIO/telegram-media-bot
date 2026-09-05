@@ -13,8 +13,8 @@ def add(parsed, file_id, file_name):
 
     execute("""
         INSERT INTO staging
-        (file_id, file_name, media_type, title, year, season, episode, episode_end, part, quality, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (file_id, file_name, media_type, title, year, season, episode, episode_end, part, quality, category, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         file_id,
         file_name,
@@ -26,6 +26,7 @@ def add(parsed, file_id, file_name):
         parsed.get("episode_end"),
         parsed.get("part"),
         parsed.get("quality", "unknown"),
+        parsed.get("category", "movie"),
         int(time.time())
     ))
 

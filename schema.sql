@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS staging (
     episode_end INTEGER,
     part INTEGER,
     quality TEXT,
+    category TEXT DEFAULT 'movie',
     status TEXT DEFAULT 'pending',
     created_at INTEGER
 );
@@ -24,7 +25,8 @@ CREATE TABLE IF NOT EXISTS movies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT,
     year TEXT,
-    order_index INTEGER DEFAULT 0
+    order_index INTEGER DEFAULT 0,
+    category TEXT DEFAULT 'movie'
 );
 
 CREATE TABLE IF NOT EXISTS movie_files (
