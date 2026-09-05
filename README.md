@@ -6,12 +6,14 @@ A private Telegram bot for storing and sharing movies and TV shows. Files are up
 
 - Auto-detects files uploaded to a private channel and parses filenames into structured data (title, year/season/episode, quality)
 - Falls back to a guided manual-entry flow (Title → Year/Season/Episode → Quality) when a filename can't be auto-parsed
-- User access whitelist with approve/reject buttons
+- User access whitelist with approve/reject buttons, with duplicate-request protection (spamming "Request Access" won't spam the admin — it just tells the user their request is already pending)
 - Media request system (users can request titles, admin approves/rejects)
 - Delete media by name, with confirmation buttons
 - Paginated navigation: movies (6/page), shows (6/page), seasons (5/page), episodes (6/page)
 - Full season sending, random pick, and a `/watchorder` command for a custom chronological viewing order
 - Crash-safe staging — detected files are saved to the database immediately, so a bot restart never loses them
+- Sent files are automatically deleted from the chat after a set time (default: 1 hour), with a warning message telling the user to download promptly. Requires the bot to stay running continuously for the full delay — see [Notes](#notes)
+- Admin-only activity log (`/activity`) tracking downloads and other user actions
 
 ## Setup
 
@@ -64,10 +66,16 @@ If a filename doesn't match any of these, the bot asks the admin to enter the de
 |---|---|
 | `/done` | Save all staged files to the database |
 | `/delete <name>` | Delete a movie or show by name (with confirmation) |
+| `/rename` | Rename a movie/show title or quality (guided flow) |
 | `/approve <id>` | Approve a user by Telegram ID |
 | `/revoke <id>` | Revoke a user's access |
 | `/users` | List all approved users |
 | `/format` | Show the filename format guide |
+| `/list_movies` | List all movies with their database IDs |
+| `/list_shows` | List all shows with their database IDs |
+| `/backup` | Back up the database |
+| `/stats` | Show archive statistics |
+| `/activity [count]` | Show recent user activity (downloads, requests, etc.) — defaults to last 20 entries, max 100 |
 
 ## User Commands
 
@@ -91,8 +99,9 @@ telegram-media-bot/
 │   ├── parser.py          ← Parses filenames into structured data
 │   ├── staging.py          ← Writes detected files to the staging table
 │   ├── approval.py          ← Moves staged files into the real tables
-│   ├── sender.py            ← Sends files to users
-│   └── locks.py              ← Prevents duplicate sends per user
+│   ├── sender.py            ← Sends files to users, schedules auto-delete
+│   ├── locks.py              ← Prevents duplicate sends per user
+│   └── logger.py              ← Records user activity (downloads, requests) for /activity
 │
 └── handlers/
     ├── start.py             ← /start command, access control
@@ -102,7 +111,10 @@ telegram-media-bot/
 
 ## Notes
 
-- Requires `python-telegram-bot==22.8` and `python-dotenv`
+- Requires `python-telegram-bot[job-queue]==22.8` and `python-dotenv` — the `[job-queue]` extra is required for auto-delete timers to work (installs APScheduler). On Windows, quote it: `pip install "python-telegram-bot[job-queue]"`
 - Uses Telegram's own servers for file storage — no local media storage
 - SQLite database lives at `storage/cache.db` (not committed — see `.gitignore`)
 - `.env` holds real secrets and is never committed — use `.env.example` as a template
+- **Auto-delete timing** is set in `core/sender.py` via `DELETE_AFTER_SECONDS` (and the matching wording in `WARNING_TEXT`) — change both together if you adjust the delay
+- **Auto-delete requires the bot to stay running** for the full delay window. If the bot restarts or goes offline before a scheduled deletion fires, that job is lost — the file will remain in the chat indefinitely. This is safe to ignore on always-on hosting, but worth knowing if running on Termux/a phone where restarts are more frequent
+- Auto-delete does not prevent users from downloading, forwarding, or otherwise saving files before the timer runs out — it only removes the bot's own message afterward
