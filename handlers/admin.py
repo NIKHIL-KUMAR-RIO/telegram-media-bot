@@ -849,7 +849,7 @@ async def format_guide(update, context):
         "*Shows (Double Episode):*\n"
         "`Star.Wars.The.Bad.Batch.S02E16E17.1080p.mkv`\n\n"
         "*Qualities supported:*\n"
-        "`480p | 720p | 1080p | 2160p | 4k`",
+        "`240p | 360p | 480p | 720p | 1080p | 2160p | 4k`",
         parse_mode="Markdown"
     )
 

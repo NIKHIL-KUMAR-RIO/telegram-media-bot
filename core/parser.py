@@ -1,6 +1,6 @@
 import re
 
-QUALITY_PATTERN = r"(?P<quality>480p|720p|1080p|2160p|4k)"
+QUALITY_PATTERN = r"(?P<quality>240p|360p|480p|720p|1080p|2160p|4k)"
 PART_PATTERN = r"(?:Part\s?(?P<part>\d+))?"
 
 # Show patterns, tried in order. Supports:
