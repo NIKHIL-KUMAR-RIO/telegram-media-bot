@@ -19,6 +19,9 @@ async def start(update, context):
                 InlineKeyboardButton("📺 Shows", callback_data="shows")
             ],
             [
+                InlineKeyboardButton("🧱 LEGO Films", callback_data="lego")
+            ],
+            [
                 InlineKeyboardButton("🎲 Random from the Galaxy", callback_data="random")
             ]
         ]
