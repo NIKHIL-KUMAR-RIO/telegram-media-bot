@@ -1,0 +1,21 @@
+# Secrets — never commit this
+.env
+
+# Database — contains real file_ids and user data
+storage/
+*.db
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Windows launcher (local paths, not useful elsewhere)
+start_bot.bat
+
+# Editor/OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
