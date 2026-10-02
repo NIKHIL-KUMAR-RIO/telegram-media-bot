@@ -4,7 +4,7 @@ This turns a laptop into always-on hosting for the bot: compile it into a single
 silent `.exe`, then launch that `.exe` automatically whenever Windows boots.
 No terminal window, no manual `python bot.py`, nothing visible on the desktop.
 
-This is separate from the [Setup](README.md#setup) steps in the main README,
+This is separate from the [Setup](PROJECT.md#setup) steps in `PROJECT.md`,
 which cover running the bot normally for development. Use this guide once the
 bot works and you want it to run permanently in the background.
 
