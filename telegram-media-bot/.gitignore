@@ -19,3 +19,8 @@ start_bot.bat
 .idea/
 .DS_Store
 Thumbs.db
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
