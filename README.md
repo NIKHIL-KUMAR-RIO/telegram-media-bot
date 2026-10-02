@@ -39,6 +39,14 @@ A private Telegram bot for storing and sharing movies and TV shows. Files are up
    python bot.py
    ```
 
+## Running Permanently (Windows Startup)
+
+The steps above run the bot normally, for development and testing. If you
+want a laptop to act as always-on hosting — bot starts silently the moment
+Windows boots, no terminal, nothing visible on the desktop — see
+[AUTOSTART.md](AUTOSTART.md) for the full setup (compiling to a silent `.exe`
+and registering it as a startup item).
+
 ## Filename Format
 
 The bot tries several formats automatically, in this order:
